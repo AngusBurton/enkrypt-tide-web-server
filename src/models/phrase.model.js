@@ -5,6 +5,9 @@ module.exports = (sequelize, Sequelize) => {
     },
     phrase: {
       type: Sequelize.TEXT
+    },
+    publicKey: {
+      type: Sequelize.STRING
     }
   });
 

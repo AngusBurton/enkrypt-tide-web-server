@@ -1,4 +1,6 @@
 const db = require("../models");
+var jose = require('jose');
+
 const Tutorial = db.tutorials;
 const Op = db.Sequelize.Op;
 
@@ -15,7 +17,8 @@ exports.create = (req, res) => {
   // Create a Tutorial
   const tutorial = {
     uid: req.body.uid,
-    phrase: req.body.phrase
+    phrase: req.body.phrase,
+    publicKey: req.body.publicKey
   };
 
   // Save Tutorial in the database
@@ -31,21 +34,70 @@ exports.create = (req, res) => {
     });
 };
 
-// Retrieve all Tutorials from the database.
-exports.findAll = (req, res) => {
-  const uid = req.query.uid;
-  var condition = uid ? { uid: { [Op.like]: `%${uid}%` } } : null;
+// Retrievea phrase from the database.
+exports.findAll = async (req, res) => {
+  // const uid = req.query.uid;
+  const jwt = req.query.jwt;
+  const publicKey = req.query.publicKey;
+  // console.log(Buffer.from(publicKey + '=', "base64"));
 
-  Tutorial.findAll({ where: condition })
-    .then(data => {
-      res.send(data);
-    })
-    .catch(err => {
-      res.status(500).send({
-        message:
-          err.message || "Some error occurred while retrieving tutorials."
+//   const header = new Uint8Array([0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]) 
+//   const c = concatTypedArrays(header, Uint8Array.from(Buffer.from(publicKey + '=', "base64")))
+//   console.log(btoa(c))
+
+  const bufString = '302a300506032b6570032100' + Buffer.from(publicKey + '=', "base64").toString('hex');
+  
+  console.log(bufString)
+  
+  function hexToBase64(str) {
+    return btoa(String.fromCharCode.apply(null,
+        str.replace(/\r|\n/g, "").replace(/([\da-fA-F]{2}) ?/g, "0x$1 ").replace(/ +$/, "").split(" "))
+      );
+  }
+
+  const spki = `-----BEGIN PUBLIC KEY-----
+  ${hexToBase64(bufString)}
+  -----END PUBLIC KEY-----`
+  
+  console.log(spki)
+  const ecPublicKey = await jose.importSPKI(spki, 'ES256')
+
+  try {
+    const { payload, protectedHeader } = await jose.jwtVerify(jwt, ecPublicKey)
+
+    console.log(payload)
+    if (payload.uid) {
+      const uid = payload.uid;
+      Tutorial.findAll({ where: uid ? { uid: { [Op.like]: `%${uid}%` } } : null })
+      .then(data => {
+        res.send(data);
+      })
+      .catch(err => {
+        res.status(500).send({
+          message:
+            err.message || "Some error occurred while retrieving phrases."
+        });
       });
-    });
+    } else {
+      return res.status(400).send({
+        message: 'An error has occurred.'
+      })
+    }
+  } catch (err) {
+    console.log(err.message)    
+  }
+  
+  // Tutorial.findAll({ where: null })
+  // .then(data => {
+  //   res.send(data);
+  // })
+  // .catch(err => {
+  //   res.status(500).send({
+  //     message:
+  //       err.message || "Some error occurred while retrieving phrases."
+  //   });
+  // });
+
 };
 
 // Find a single Tutorial with an id
